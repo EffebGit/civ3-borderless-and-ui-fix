@@ -1,0 +1,18 @@
+# build output
+build/
+*.obj
+*.lib
+*.exp
+*.ilk
+*.pdb
+*.res
+
+# never commit Microsoft's DLL, or a copy of the game
+opengl32_real.dll
+*.log
+civ3bl.log
+
+# local scratch
+logs/
+__pycache__/
+*.pyc
