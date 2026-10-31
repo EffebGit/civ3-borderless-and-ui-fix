@@ -99,8 +99,8 @@ seconds after loading. Details, the API table and the crash triage recipe:
 Requirements: Visual Studio 2019/2022 with the C++ tools (x86) and a Windows SDK.
 
 ```
-git clone <this repo>
-cd civ3-borderless
+git clone https://github.com/Caduceatore/civ3-borderless-and-ui-fix.git
+cd civ3-borderless-and-ui-fix
 tools\build.bat          :: or: bash tools/build.sh   (Git Bash)
 ```
 
