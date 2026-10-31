@@ -128,7 +128,6 @@ Windows version's OpenGL export set.
 ## License
 
 [MIT](LICENSE). Use it, fork it, ship it in your own mod — just keep the copyright notice.
-If you would rather have zero conditions, `0BSD` is a one-line swap.
 
 Not affiliated with Firaxis, Take-Two or 2K. No game assets are redistributed, and
 `opengl32_real.dll` is not included — the installer copies your own system copy.
