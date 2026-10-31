@@ -46,14 +46,25 @@ INSTALL
 -------
   1. Close the game.
   2. Copy opengl32.dll, opengl32_real.dll and civ3bl.ini into
-        <Steam>\steamapps\common\Sid Meier's Civilization III Complete\Conquests\
-     (install.bat does this and patches conquests.ini for you.)
-  3. Launch Conquests normally (from Steam or the exe).
+        <Steam>\steamapps\common\Sid Meier's Civilization III Complete\Conquests
+     (install.bat does this for you and patches conquests.ini).
 
-opengl32_real.dll must be the 32-bit system OpenGL DLL from
-C:\Windows\SysWOW64\opengl32.dll - install.bat copies the correct one for your
-machine. Do not use a 64-bit copy.
+Two DLLs end up in that folder, and they are a pair:
 
+  opengl32.dll        this patch. It is shipped in the download, built from the
+                      project's source. It carries a system DLL's name on purpose:
+                      Windows resolves an app-local DLL first, and opengl32 is not
+                      a KnownDLL, so the game loads it before its own engine runs.
+
+  opengl32_real.dll   your own C:\Windows\SysWOW64\opengl32.dll, copied in by the
+                      installer. It is Microsoft's file and is NOT redistributed
+                      with this patch. The proxy forwards every OpenGL call to it.
+
+  Do not substitute a 64-bit opengl32.dll, and do not delete only one of the two:
+  the game will fail to start with 0xC0000139 (STATUS_ENTRYPOINT_NOT_FOUND).
+
+  If a Steam "verify integrity of game files" removes opengl32.dll, run install.bat
+  again.
 
 CONFIGURATION
 -------------

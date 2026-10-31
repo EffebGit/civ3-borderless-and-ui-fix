@@ -45,14 +45,33 @@ uninstalls by deleting two files.
    With no argument it installs into its own folder, so you can also just drop the files in
    `...\Sid Meier's Civilization III Complete\Conquests\` and run it there.
 
-The installer copies the patch, copies **your** `C:\Windows\SysWOW64\opengl32.dll` next to it
-as `opengl32_real.dll` (that binary is Microsoft's and is deliberately not redistributed),
-backs up `conquests.ini`, and sets `KeepRes=1`, `PlayIntro=0`, and removes any `Video Mode=`.
+### What is in the zip, and what ends up in the game folder
+
+The zip contains four files plus one DLL. `opengl32.dll` in the zip is **this project's own
+build** — it is the patch, and shipping it is the whole point. It carries the name `opengl32.dll`
+because Windows resolves an app-local DLL before the system one, and `opengl32` is not a
+KnownDLL, which is what makes the game load it.
+
+What the installer leaves in `...\Conquests\`:
+
+| File | Where it comes from | What it is |
+|---|---|---|
+| `opengl32.dll` | the zip (built from this repo's `src/`) | the patch itself: proxy + the borderless/scaling logic |
+| `opengl32_real.dll` | **copied by the installer from your own `C:\Windows\SysWOW64\opengl32.dll`** | the real OpenGL DLL the proxy forwards to. Never redistributed here — it is Microsoft's |
+| `civ3bl.ini` | the zip (kept if you already have one) | configuration |
+| `conquests.ini` | edited in place, original saved as `conquests.ini.bak` | `KeepRes=1`, `PlayIntro=0`, any `Video Mode=` removed |
+
+So two DLLs land in the folder and they are a pair: `opengl32.dll` (ours) must be next to
+`opengl32_real.dll` (yours) or the game will fail to start with `0xC0000139`.
 
 Launch the game normally, from Steam or the exe.
 
-**Uninstall:** run `uninstall.bat`, or delete `opengl32.dll` and `opengl32_real.dll`.
+**Uninstall:** run `uninstall.bat`, or delete both `opengl32.dll` and `opengl32_real.dll`.
 If Steam ever "verifies integrity of game files" and removes the proxy, re-run `install.bat`.
+
+Some antivirus products are twitchy about an unfamiliar DLL that shadows a system one, and
+Windows may show a "downloaded file" prompt on the zip. That is the price of the technique, not
+a sign of anything wrong; the full source is here and `toolsuild.bat` reproduces the binary.
 
 ## Configuration
 
@@ -99,7 +118,7 @@ seconds after loading. Details, the API table and the crash triage recipe:
 Requirements: Visual Studio 2019/2022 with the C++ tools (x86) and a Windows SDK.
 
 ```
-git clone https://github.com/Caduceatore/civ3-borderless-and-ui-fix.git
+git clone https://github.com/EffebGit/civ3-borderless-and-ui-fix.git
 cd civ3-borderless-and-ui-fix
 tools\build.bat          :: or: bash tools/build.sh   (Git Bash)
 ```
