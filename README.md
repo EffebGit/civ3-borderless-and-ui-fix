@@ -86,7 +86,7 @@ a sign of anything wrong; the full source is here and `toolsuild.bat` reproduce
 | `ScalePresent` | `1` | Scale the engine's frame up to the window. |
 | `DpiAware` | `1` | Make the process per-monitor-v2 DPI aware before the engine creates its window. |
 | `LockCursor` | `1` | Confine the cursor to the game's monitor while focused. |
-| `RepaintOnClick` | `1` | Force a full repaint after each click. Works around the engine's damage tracking dropping regions (tech-tree rows below the second never re-colour otherwise). Toggle live with **Ctrl+F10**. |
+| `RepaintOnClick` | `1` | Force a full repaint after each click. Works around the engine's damage tracking dropping regions (tech-tree rows below the second never re-colour otherwise). Re-read live — edit and save while the game runs (~2 s). |
 | `LogLevel` | `0` | `0` silent, `1` write `civ3bl.log`, `2` verbose. |
 | `LieScreen` / `LieClientRect` / `LieDeviceCaps` | `1` | Advanced: which APIs are lied to about the virtual display size. Leave all on — the engine derives buffer sizes and row strides from them and they must agree. |
 
@@ -150,6 +150,9 @@ Windows version's OpenGL export set.
   after each click (one extra screen redraw per click, nothing at idle).
 - `LogBlits=1` writes and flushes a line per blit and will visibly stutter the
   game. Diagnostics only.
+- `civ3bl.ini` is re-read whenever it changes, so `RepaintOnClick` and `LogLevel`
+  can be flipped mid-game to A/B them; `LogicalWidth`/`LogicalHeight` still need
+  a restart.
 
 ## License
 
