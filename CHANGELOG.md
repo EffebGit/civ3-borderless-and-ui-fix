@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.2
+
+### Added
+
+- **`ForceRedraw=N`** — invalidate the client N times a second so the engine keeps producing
+  frames while idle (useful for frame generation and VRR, which need a present stream). Off by
+  default: the engine is event driven and idles at ~0 % CPU. Measured at the menu, a steady
+  60 Hz costs roughly 13 % of one core (~0.2 % per frame), about half that at 30 Hz; a busy map
+  costs more. It does not make scrolling smoother — scroll input already produces frames.
+
 ## 1.0.1
 
 ### Fixed

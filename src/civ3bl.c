@@ -84,6 +84,7 @@ void cfg_load(void)
     g_cfg.verboseBlit    = ini_int(ini, "Civ3Borderless", "LogBlits", 0);
     g_cfg.lockCursor     = ini_int(ini, "Civ3Borderless", "LockCursor", 1);
     g_cfg.repaintOnClick = ini_int(ini, "Civ3Borderless", "RepaintOnClick", 1);
+    g_cfg.forceRedraw    = ini_int(ini, "Civ3Borderless", "ForceRedraw", 0);
     g_cfg.lieScreen      = ini_int(ini, "Civ3Borderless", "LieScreen", 1);
     g_cfg.lieClientRect  = ini_int(ini, "Civ3Borderless", "LieClientRect", 1);
     g_cfg.lieDeviceCaps  = ini_int(ini, "Civ3Borderless", "LieDeviceCaps", 1);
@@ -956,6 +957,24 @@ static void check_ini_reload(void)
     if (g_cfg.logLevel == 0 && g_fp) { fclose(g_fp); g_fp = NULL; }   /* release the log */
 }
 
+/* ForceRedraw=N: invalidate the client N times a second so the engine keeps
+   producing frames even while nothing changes. Off by default -- the engine is
+   event driven and idles at ~0% CPU, this trades that for a steady present
+   stream (frame-gen/VRR tools, smoother animated screens). */
+static DWORD WINAPI redraw_thread(LPVOID p)
+{
+    (void)p;
+    for (;;) {
+        int hz = g_cfg.forceRedraw;
+        if (hz <= 0) { Sleep(150); continue; }
+        Sleep(1000 / (hz > 240 ? 240 : hz));
+        if (hz > 0 && g_gameWnd && IsWindow(g_gameWnd) && IsWindowVisible(g_gameWnd) &&
+            GetForegroundWindow() == g_gameWnd)
+            InvalidateRect(g_gameWnd, NULL, FALSE);
+    }
+    return 0;
+}
+
 static DWORD WINAPI worker(LPVOID p)
 {
     int ticks = 0;
@@ -1069,6 +1088,7 @@ BOOL WINAPI DllMain(HINSTANCE hInst, DWORD reason, LPVOID reserved)
 
         CreateThread(NULL, 0, worker, NULL, 0, NULL);
         if (g_cfg.lockCursor) CreateThread(NULL, 0, cursor_thread, NULL, 0, NULL);
+        CreateThread(NULL, 0, redraw_thread, NULL, 0, NULL);
     } else if (reason == DLL_PROCESS_DETACH) {
         if (g_clipped) { ClipCursor(NULL); g_clipped = 0; }
         detach();

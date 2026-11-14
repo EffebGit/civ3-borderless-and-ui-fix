@@ -88,6 +88,7 @@ Release history and per-version changes: [CHANGELOG.md](CHANGELOG.md).
 | `ScalePresent` | `1` | Scale the engine's frame up to the window. |
 | `DpiAware` | `1` | Make the process per-monitor-v2 DPI aware before the engine creates its window. |
 | `LockCursor` | `1` | Confine the cursor to the game's monitor while focused. |
+| `ForceRedraw` | `0` | Invalidate the client N times per second (e.g. `60`) so the engine keeps presenting even when idle — for frame-gen/VRR tools. Measured ~13% of one core at 60 Hz, ~half at 30 Hz. Does not make scrolling smoother; that already produces frames. |
 | `RepaintOnClick` | `1` | Force a full repaint after each click. Works around the engine's damage tracking dropping regions (tech-tree rows below the second never re-colour otherwise). Re-read live — edit and save while the game runs (~2 s). |
 | `LogLevel` | `0` | `0` silent, `1` write `civ3bl.log`, `2` verbose. |
 | `LieScreen` / `LieClientRect` / `LieDeviceCaps` | `1` | Advanced: which APIs are lied to about the virtual display size. Leave all on — the engine derives buffer sizes and row strides from them and they must agree. |
