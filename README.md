@@ -36,7 +36,7 @@ uninstalls by deleting two files.
 ## Install
 
 1. Close the game.
-2. Grab `civ3bl-installer.zip` from [Releases](../../releases) and extract it anywhere.
+2. Grab the zip from the [latest release](../../releases/latest) and extract it anywhere.
 3. Run `install.bat`, optionally with the Conquests folder as an argument:
 
    ```
@@ -72,6 +72,8 @@ If Steam ever "verifies integrity of game files" and removes the proxy, re-run `
 Some antivirus products are twitchy about an unfamiliar DLL that shadows a system one, and
 Windows may show a "downloaded file" prompt on the zip. That is the price of the technique, not
 a sign of anything wrong; the full source is here and `toolsuild.bat` reproduces the binary.
+
+Release history and per-version changes: [CHANGELOG.md](CHANGELOG.md).
 
 ## Configuration
 
