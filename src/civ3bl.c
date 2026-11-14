@@ -672,6 +672,7 @@ static HOOKFN hook_for(const char *dll, const char *name)
 }
 
 // -------------------------------------------------------------- window setup --
+static void nudge_repaint(HWND h, int why);
 static WNDPROC g_origProc;
 
 /* The engine hit-tests clicks with the client coordinates carried by the
@@ -739,17 +740,17 @@ static LRESULT CALLBACK game_wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
                    (int)(short)LOWORD(lp), (int)(short)HIWORD(lp),
                    (int)(short)LOWORD(remap_mouse(lp, 0)), (int)(short)HIWORD(remap_mouse(lp, 0)));
         r = CallWindowProcA(g_origProc, h, msg, wp, remap_mouse(lp, 0));
-        if (g_cfg.repaintOnClick && msg != WM_MOUSEMOVE) {
-            /* The engine's incremental repaint drops regions after an action
-               (e.g. tech-tree rows below the second never re-colour), while a
-               full paint -- alt-tab, or this -- renders them correctly. */
-            InvalidateRect(h, NULL, FALSE);
-            if (g_cfg.verboseBlit && g_nRepaint++ < 20) logmsg("invalidate after click 0x%04x", msg);
-        }
+        /* The engine's incremental repaint drops regions after an action, and
+           modal screens (the "what to build next" advisor) do not repaint on
+           hover or wheel at all, while a full paint renders them correctly. */
+        nudge_repaint(h, msg);
         return r;
     }
-    case WM_MOUSEWHEEL: case 0x02A3:                      /* wheel uses screen coords */
-        return CallWindowProcA(g_origProc, h, msg, wp, remap_mouse(lp, 1));
+    case WM_MOUSEWHEEL: case 0x02A3: {                    /* wheel uses screen coords */
+        LRESULT r = CallWindowProcA(g_origProc, h, msg, wp, remap_mouse(lp, 1));
+        nudge_repaint(h, msg);
+        return r;
+    }
     case WM_ACTIVATE:
         if (g_cfg.verboseBlit) logmsg("WM_ACTIVATE wp=0x%lx", (unsigned long)wp);
         break;
@@ -797,6 +798,21 @@ static BOOL CALLBACK collect_game_wnd(HWND h, LPARAM lp)
     WndList *l = (WndList*)lp;
     if (is_game_wnd(h) && l->n < 8) l->w[l->n++] = h;
     return TRUE;
+}
+
+/* At most one forced repaint per throttle window, so a high-rate mouse cannot
+   turn the nudge into a per-pixel redraw storm. */
+static int g_lastNudge;
+
+static void nudge_repaint(HWND h, int why)
+{
+    int now;
+    if (!g_cfg.repaintOnClick) return;
+    now = (int)GetTickCount();
+    if (now - g_lastNudge < 10) return;
+    g_lastNudge = now;
+    InvalidateRect(h, NULL, FALSE);
+    if (g_cfg.verboseBlit && g_nRepaint++ < 30) logmsg("repaint nudge (msg 0x%04x)", why);
 }
 
 static void enforce_geometry(void)

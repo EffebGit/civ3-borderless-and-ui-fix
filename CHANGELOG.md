@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.3
+
+### Fixed
+
+- **Modal screens stopped responding to the mouse.** While the "what to build next" advisor was
+  up, the build list did not highlight on hover and the production menu ignored the mouse wheel,
+  because the repaint nudge only fired for button messages and that dialog never repaints
+  incrementally. The nudge now covers mouse movement, buttons and the wheel, throttled to at most
+  one forced repaint per 10 ms so a high-rate mouse cannot cause a redraw storm (worst case about
+  one full redraw per frame while the pointer is moving).
+
 ## 1.0.2
 
 ### Added
