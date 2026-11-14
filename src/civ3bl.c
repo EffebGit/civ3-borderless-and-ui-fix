@@ -83,6 +83,7 @@ void cfg_load(void)
     g_cfg.monitorOverride = ini_int(ini, "Civ3Borderless", "Monitor", 0);
     g_cfg.verboseBlit    = ini_int(ini, "Civ3Borderless", "LogBlits", 0);
     g_cfg.lockCursor     = ini_int(ini, "Civ3Borderless", "LockCursor", 1);
+    g_cfg.repaintOnClick = ini_int(ini, "Civ3Borderless", "RepaintOnClick", 1);
     g_cfg.lieScreen      = ini_int(ini, "Civ3Borderless", "LieScreen", 1);
     g_cfg.lieClientRect  = ini_int(ini, "Civ3Borderless", "LieClientRect", 1);
     g_cfg.lieDeviceCaps  = ini_int(ini, "Civ3Borderless", "LieDeviceCaps", 1);
@@ -248,6 +249,7 @@ typedef HDC  (WINAPI *PFN_GetDC)(HWND);
 typedef int  (WINAPI *PFN_ReleaseDC)(HWND, HDC);
 typedef BOOL (WINAPI *PFN_SetWindowPos)(HWND, HWND, int, int, int, int, UINT);
 typedef int  (WINAPI *PFN_SetStretchBltMode)(HDC, int);
+typedef int  (WINAPI *PFN_SelectClipRgn)(HDC, HRGN);
 typedef BOOL (WINAPI *PFN_BitBlt)(HDC, int, int, int, int, HDC, int, int, DWORD);
 typedef BOOL (WINAPI *PFN_StretchBlt)(HDC, int, int, int, int, HDC, int, int, int, int, DWORD);
 typedef int  (WINAPI *PFN_SetDIBitsToDevice)(HDC, int, int, DWORD, DWORD, int, int, UINT, UINT, const void*, const BITMAPINFO*, UINT);
@@ -267,6 +269,57 @@ static PFN_GetDC            p_GetDC;
 static PFN_ReleaseDC        p_ReleaseDC;
 static PFN_SetWindowPos     p_SetWindowPos;
 static PFN_SetStretchBltMode p_SetStretchBltMode;
+static PFN_SelectClipRgn    p_SelectClipRgn;
+static int g_nClip;
+static int g_nRepaint;
+static FILETIME g_iniStamp;
+
+/* Present-rate statistics: one log line every 5 s when LogLevel>=1, so an A/B
+   between settings can be compared by numbers instead of by eye. */
+static LARGE_INTEGER g_qpf;
+static LONGLONG g_lastPresent;
+static int      g_statCount;
+static int      g_statIv[256];     /* last 256 intervals, microseconds */
+static LONGLONG g_statSum;
+static int      g_statMax;
+static int      g_statIdx;
+
+static int qpc_us(void)
+{
+    LARGE_INTEGER n;
+    if (!g_qpf.QuadPart) QueryPerformanceFrequency(&g_qpf);
+    QueryPerformanceCounter(&n);
+    return (int)((n.QuadPart * 1000000LL) / (g_qpf.QuadPart ? g_qpf.QuadPart : 1));
+}
+
+static void stat_present(void)
+{
+    int now = qpc_us(), iv;
+    if (!g_lastPresent) { g_lastPresent = now; return; }
+    iv = now - (int)g_lastPresent;
+    g_lastPresent = now;
+    if (iv < 0 || iv > 2000000) return;
+    g_statIv[g_statIdx++ & 255] = iv;
+    g_statSum += iv;
+    g_statCount++;
+    if (iv > g_statMax) g_statMax = iv;
+}
+
+static void stat_flush(void)
+{
+    int i, n, avg, p95;
+    int tmp[256];
+    if (g_cfg.logLevel < 1 || g_statCount < 8) { g_statCount = 0; g_statSum = 0; g_statMax = 0; g_statIdx = 0; return; }
+    n = g_statCount > 256 ? 256 : g_statCount;
+    memcpy(tmp, g_statIv, sizeof(int) * n);
+    /* insertion sort is fine for 256 entries once every 5 s */
+    for (i = 1; i < n; i++) { int v = tmp[i], j = i - 1; while (j >= 0 && tmp[j] > v) { tmp[j + 1] = tmp[j]; j--; } tmp[j + 1] = v; }
+    avg = (int)(g_statSum / g_statCount);
+    p95 = tmp[(n * 95) / 100];
+    logmsg("stats: presents=%d avg=%.1fms p95=%.1fms max=%.1fms repaintOnClick=%d",
+           g_statCount, avg / 1000.0, p95 / 1000.0, g_statMax / 1000.0, g_cfg.repaintOnClick);
+    g_statCount = 0; g_statSum = 0; g_statMax = 0; g_statIdx = 0;
+}
 static PFN_BitBlt           p_BitBlt;
 static PFN_StretchBlt       p_StretchBlt;
 static PFN_SetDIBitsToDevice p_SetDIBitsToDevice;
@@ -389,6 +442,61 @@ static void note_blit(int w, int h)
     }
 }
 
+/* The engine scopes repaints with clip regions expressed in its own logical
+   coordinates (jgl.dll imports SelectClipRgn/CreateRectRgnIndirect). Left alone,
+   a 2x blit is clipped to the 1x rect, so anything outside it never repaints --
+   e.g. the lower rows of the tech tree not re-colouring on selection. Scale the
+   region with the same transform as the blits. Memory DCs are left untouched. */
+static HRGN scale_region(HRGN rgn)
+{
+    DWORD sz;
+    RGNDATA *rd;
+    HRGN out = NULL;
+    if (!p_SelectClipRgn) return NULL;
+    sz = GetRegionData(rgn, 0, NULL);
+    if (!sz) return NULL;
+    rd = (RGNDATA*)malloc(sz);
+    if (!rd) return NULL;
+    if (GetRegionData(rgn, sz, rd)) {
+        RECT *r = (RECT*)rd->Buffer;
+        DWORD i;
+        int x, y, w, h;
+        for (i = 0; i < rd->rdh.nCount; i++) {
+            x = r[i].left; y = r[i].top;
+            w = r[i].right - r[i].left;
+            h = r[i].bottom - r[i].top;
+            map_rect(&x, &y, &w, &h);
+            r[i].left = x; r[i].top = y;
+            r[i].right = x + w; r[i].bottom = y + h;
+        }
+        out = ExtCreateRegion(NULL, sz, rd);
+    }
+    free(rd);
+    return out;
+}
+
+static int WINAPI H_SelectClipRgn(HDC hdc, HRGN rgn)
+{
+    if (!p_SelectClipRgn) p_SelectClipRgn = (PFN_SelectClipRgn)GetProcAddress(GetModuleHandleA("gdi32.dll"), "SelectClipRgn");
+    if (g_cfg.scalePresent && rgn && is_game_dc(hdc)) {
+        HRGN s;
+        update_fit();
+        s = scale_region(rgn);
+        if (s) {
+            int res;
+            if (g_cfg.logLevel > 1 && g_nClip++ < 12) {
+                RECT b;
+                GetRgnBox(rgn, &b);
+                logmsg("SelectClipRgn(logical %ld,%ld-%ld,%ld) -> scaled", b.left, b.top, b.right, b.bottom);
+            }
+            res = p_SelectClipRgn(hdc, s);
+            DeleteObject(s);
+            return res;
+        }
+    }
+    return p_SelectClipRgn(hdc, rgn);
+}
+
 /* Fill the letterbox/pillarbox area so leftover pixels never show through. */
 static void paint_bars(HDC dst, int W, int H)
 {
@@ -403,8 +511,13 @@ static void paint_bars(HDC dst, int W, int H)
     }
 }
 
+static int g_logBlit;
+
 static BOOL WINAPI H_BitBlt(HDC dst, int x, int y, int w, int h, HDC src, int sx, int sy, DWORD rop)
 {
+    if (g_cfg.verboseBlit && g_logBlit++ < 6000)
+        logmsg("BitBlt dstG=%d srcG=%d dst=(%d,%d %dx%d) src=(%d,%d) rop=%lx",
+               is_game_dc(dst), is_game_dc(src), x, y, w, h, sx, sy, (unsigned long)rop);
     if (!p_BitBlt)   p_BitBlt   = (PFN_BitBlt)GetProcAddress(GetModuleHandleA("gdi32.dll"), "BitBlt");
     if (!p_StretchBlt) p_StretchBlt = (PFN_StretchBlt)GetProcAddress(GetModuleHandleA("gdi32.dll"), "StretchBlt");
     if (g_cfg.scalePresent && is_game_dc(dst)) note_blit(w, h);
@@ -414,7 +527,7 @@ static BOOL WINAPI H_BitBlt(HDC dst, int x, int y, int w, int h, HDC src, int sx
         map_rect(&X, &Y, &W, &H);
         if (!p_SetStretchBltMode) p_SetStretchBltMode = (PFN_SetStretchBltMode)GetProcAddress(GetModuleHandleA("gdi32.dll"), "SetStretchBltMode");
         if (p_SetStretchBltMode) p_SetStretchBltMode(dst, 3 /* COLORONCOLOR: hard pixels, no blur */);
-        if (w == g_frameW && h == g_frameH) paint_bars(dst, W, H);
+        if (w == g_frameW && h == g_frameH) { paint_bars(dst, W, H); stat_present(); }
         if (w == g_logicalW && h == g_logicalH && (g_cfg.verboseBlit || g_nPresent++ < 4))
             logmsg("present: %dx%d -> client %dx%d at %d,%d (scale %.3f)", w, h, W, H, X, Y, g_scale);
         return p_StretchBlt(dst, X, Y, W, H, src, sx, sy, w, h, rop);
@@ -424,6 +537,9 @@ static BOOL WINAPI H_BitBlt(HDC dst, int x, int y, int w, int h, HDC src, int sx
 
 static BOOL WINAPI H_StretchBlt(HDC dst, int x, int y, int w, int h, HDC src, int sx, int sy, int sw, int sh, DWORD rop)
 {
+    if (g_cfg.verboseBlit && g_logBlit++ < 6000)
+        logmsg("StretchBlt dstG=%d srcG=%d dst=(%d,%d %dx%d) src=(%d,%d %dx%d)",
+               is_game_dc(dst), is_game_dc(src), x, y, w, h, sx, sy, sw, sh);
     if (!p_StretchBlt) p_StretchBlt = (PFN_StretchBlt)GetProcAddress(GetModuleHandleA("gdi32.dll"), "StretchBlt");
     if (g_cfg.scalePresent && is_game_dc(dst)) {
         int X = x, Y = y, W = w, H = h;
@@ -547,6 +663,7 @@ static HOOKFN hook_for(const char *dll, const char *name)
         if (!strcmp(name, "GetDeviceCaps"))     return (HOOKFN)H_GetDeviceCaps;
         if (!strcmp(name, "BitBlt"))            return (HOOKFN)H_BitBlt;
         if (!strcmp(name, "StretchBlt"))        return (HOOKFN)H_StretchBlt;
+        if (!strcmp(name, "SelectClipRgn"))     return (HOOKFN)H_SelectClipRgn;
         if (!strcmp(name, "SetDIBitsToDevice")) return (HOOKFN)H_SetDIBitsToDevice;
         if (!strcmp(name, "StretchDIBits"))     return (HOOKFN)H_StretchDIBits;
     }
@@ -614,12 +731,22 @@ static LRESULT CALLBACK game_wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
         return HTCLIENT;
     case WM_MOUSEMOVE: case WM_LBUTTONDOWN: case WM_LBUTTONUP: case WM_LBUTTONDBLCLK:
     case WM_RBUTTONDOWN: case WM_RBUTTONUP: case WM_RBUTTONDBLCLK:
-    case WM_MBUTTONDOWN: case WM_MBUTTONUP: case WM_MBUTTONDBLCLK:
+    case WM_MBUTTONDOWN: case WM_MBUTTONUP: case WM_MBUTTONDBLCLK: {
+        LRESULT r;
         if (g_cfg.verboseBlit && g_nMsg++ < 40)
             logmsg("wndproc msg 0x%04x client %d,%d -> %d,%d", msg,
                    (int)(short)LOWORD(lp), (int)(short)HIWORD(lp),
                    (int)(short)LOWORD(remap_mouse(lp, 0)), (int)(short)HIWORD(remap_mouse(lp, 0)));
-        return CallWindowProcA(g_origProc, h, msg, wp, remap_mouse(lp, 0));
+        r = CallWindowProcA(g_origProc, h, msg, wp, remap_mouse(lp, 0));
+        if (g_cfg.repaintOnClick && msg != WM_MOUSEMOVE) {
+            /* The engine's incremental repaint drops regions after an action
+               (e.g. tech-tree rows below the second never re-colour), while a
+               full paint -- alt-tab, or this -- renders them correctly. */
+            InvalidateRect(h, NULL, FALSE);
+            if (g_cfg.verboseBlit && g_nRepaint++ < 20) logmsg("invalidate after click 0x%04x", msg);
+        }
+        return r;
+    }
     case WM_MOUSEWHEEL: case 0x02A3:                      /* wheel uses screen coords */
         return CallWindowProcA(g_origProc, h, msg, wp, remap_mouse(lp, 1));
     case WM_ACTIVATE:
@@ -799,6 +926,36 @@ static DWORD WINAPI cursor_thread(LPVOID p)
     return 0;
 }
 
+/* Re-read the ini when it changes on disk: lets settings (notably
+   RepaintOnClick) be A/B tested without restarting the game. */
+static void check_ini_reload(void)
+{
+    char ini[MAX_PATH];
+    char sep = (char)0x5C;                      /* backslash, without an escape */
+    HANDLE h;
+    FILETIME ft;
+    _snprintf(ini, sizeof(ini), "%s%cciv3bl.ini", g_exeDir, sep);
+    /* GetFileAttributesEx/FindFirstFile serve a lazily-updated directory entry,
+       so consecutive edits look identical; a real handle returns the truth. */
+    h = CreateFileA(ini, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                    NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h == INVALID_HANDLE_VALUE) return;
+    if (!GetFileTime(h, NULL, NULL, &ft)) { CloseHandle(h); return; }
+    CloseHandle(h);
+    if (!g_iniStamp.dwLowDateTime && !g_iniStamp.dwHighDateTime) {
+        g_iniStamp = ft;
+        return;
+    }
+    if (CompareFileTime(&ft, &g_iniStamp) == 0) return;
+    g_iniStamp = ft;
+    cfg_load();
+    g_statCount = 0; g_statSum = 0; g_statMax = 0; g_statIdx = 0;
+    if (g_cfg.logLevel > 0)
+        logmsg("ini reloaded: RepaintOnClick=%d LockCursor=%d LogLevel=%d (LogicalWidth/Height need a restart)",
+               g_cfg.repaintOnClick, g_cfg.lockCursor, g_cfg.logLevel);
+    if (g_cfg.logLevel == 0 && g_fp) { fclose(g_fp); g_fp = NULL; }   /* release the log */
+}
+
 static DWORD WINAPI worker(LPVOID p)
 {
     int ticks = 0;
@@ -820,6 +977,8 @@ static DWORD WINAPI worker(LPVOID p)
             }
         }
         enforce_geometry();
+        if ((ticks % 42) == 0) stat_flush();          /* ~5 s at 120 ms/tick */
+        if ((ticks % 16) == 0) check_ini_reload();    /* ~2 s */
         if (g_cfg.verboseBlit && g_gameWnd && (ticks % 8) == 0) {
             HWND fg = GetForegroundWindow();
             logmsg("foreground=%p game=%p active=%d", (void*)fg, (void*)g_gameWnd,
@@ -895,6 +1054,14 @@ BOOL WINAPI DllMain(HINSTANCE hInst, DWORD reason, LPVOID reserved)
         AddVectoredExceptionHandler(1, crash_handler);
         g_frameW = g_logicalW;
         g_frameH = g_logicalH;
+        /* Patch the executable's own IAT synchronously: the engine creates its
+           window and sizes its surfaces within milliseconds of startup, so
+           leaving this to the worker thread races it (and losing the race means
+           4K surfaces and a frame size that never comes back down). Only the
+           main module here -- no LoadLibrary under the loader lock; late-loaded
+           DLLs are still handled by the worker. */
+        patch_module(GetModuleHandleA(NULL));
+
         logmsg("=== Civ3 borderless layer attached ===");
         logmsg("monitor %ld,%ld-%ld,%ld | virtual display %dx%d | fit=%s | borderless=%d scale=%d dpi=%d lockcursor=%d",
                g_monitorRect.left, g_monitorRect.top, g_monitorRect.right, g_monitorRect.bottom,

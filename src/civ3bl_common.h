@@ -18,6 +18,7 @@ typedef struct {
     char fit[16];        // "integer" | "fit" | "stretch"
     int  monitorOverride; // -1 = primary
     int  verboseBlit;    // log every present call
+    int  repaintOnClick; // full repaint after a click (engine damage tracking drops regions)
     int  lockCursor;     // confine the cursor to the monitor while foreground
     int  lieScreen;      // report LogicalWidth/Height via GetSystemMetrics
     int  lieClientRect;  // report LogicalWidth/Height via GetClientRect
