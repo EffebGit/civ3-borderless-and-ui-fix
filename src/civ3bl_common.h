@@ -1,5 +1,7 @@
 // civ3bl_common.h -- shared logging + IAT hook plumbing for the Civ3 borderless layer
 #pragma once
+
+#define CIV3BL_VERSION "1.0.1"
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <stdio.h>

@@ -1062,7 +1062,7 @@ BOOL WINAPI DllMain(HINSTANCE hInst, DWORD reason, LPVOID reserved)
            DLLs are still handled by the worker. */
         patch_module(GetModuleHandleA(NULL));
 
-        logmsg("=== Civ3 borderless layer attached ===");
+        logmsg("=== Civ3 borderless %s attached ===", CIV3BL_VERSION);
         logmsg("monitor %ld,%ld-%ld,%ld | virtual display %dx%d | fit=%s | borderless=%d scale=%d dpi=%d lockcursor=%d",
                g_monitorRect.left, g_monitorRect.top, g_monitorRect.right, g_monitorRect.bottom,
                g_logicalW, g_logicalH, g_cfg.fit, g_cfg.borderless, g_cfg.scalePresent, g_cfg.dpiAware, g_cfg.lockCursor);
