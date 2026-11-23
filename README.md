@@ -161,6 +161,38 @@ Windows version's OpenGL export set.
   can be flipped mid-game to A/B them; `LogicalWidth`/`LogicalHeight` still need
   a restart.
 
+## Known engine bug: GDI handle exhaustion in long sessions
+
+Civ3 1.22 leaks a GDI object every time it repaints the map. Measured on a Conquests 1.22 install
+**with this mod disabled** (`Enabled=0`, stock windowed game, no scaling): the process's GDI handle
+count climbed from 542 to 4,612 in 86 seconds while the mouse was swept across the map — about
+50 handles per second — and stayed flat the moment input stopped. A later run measured ~83/second
+with faster movement.
+
+So this is **not** the borderless layer, and it is the real cause of "the game crashes after a few
+minutes" reports. Windows' default per-process GDI quota is 10,000 objects; once object creation
+starts failing, the engine dereferences a bad pointer and dies with an access violation in whichever
+module happens to be running (it can be this DLL, which makes it *look* like the mod). Windows logs a
+burst of `GDIObjectLeak` RADAR events immediately before the crash — check for those first.
+
+Mitigation — elevated prompt, then a **reboot** (it is a boot-time setting):
+
+```
+reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows" /v GDIProcessHandleQuota /t REG_DWORD /d 65536 /f
+```
+
+65,536 is the documented maximum. At the measured rate that turns ~3 minutes of uninterrupted map
+hovering into ~13; ordinary play (turns, city screens, combat, intermittent movement) stays far below
+it. This is a stopgap for an engine bug, not a fix.
+
+Note that this interacts with the repaint nudges above: every extra full repaint is one more leaked
+handle, so a mod that forces repaints increases the leak *rate* even though it does not cause the
+leak. If you play marathon sessions, keeping `RepaintOnClick`/`RepaintOnKey` on is still correct —
+they cost a handle per input event, and the quota increase covers it.
+
+To measure it yourself: poll `GetGuiResources(hProcess, 0)` twice a second while moving the mouse
+across the map. A monotonic climb that stops when input stops is this bug.
+
 ## License
 
 [MIT](LICENSE). Use it, fork it, ship it in your own mod — just keep the copyright notice.
