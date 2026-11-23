@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.0.4
+
+### Fixed
+
+- **Typed values in dialog fields never appeared.** The engine's damage tracking does not mark a
+  text or number box dirty, so digits entered into the trade screen's amount field stayed invisible
+  until something else forced a full paint (which, with `RepaintOnClick`, usually meant moving the
+  mouse). The window procedure now also nudges one full repaint after keyboard input, throttled to
+  one per 10 ms like the mouse path.
+
+### Added
+
+- **`RepaintOnKey=1`** (default on) — the new gate for the above. Re-read live from `civ3bl.ini`, so
+  it can be A/B tested without restarting the game. Set to 0 to restore pre-1.0.4 behaviour.
 ## 1.0.3
 
 ### Fixed

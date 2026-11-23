@@ -90,6 +90,7 @@ Release history and per-version changes: [CHANGELOG.md](CHANGELOG.md).
 | `LockCursor` | `1` | Confine the cursor to the game's monitor while focused. |
 | `ForceRedraw` | `0` | Invalidate the client N times per second (e.g. `60`) so the engine keeps presenting even when idle — for frame-gen/VRR tools. Measured ~13% of one core at 60 Hz, ~half at 30 Hz. Does not make scrolling smoother; that already produces frames. |
 | `RepaintOnClick` | `1` | Force a full repaint after mouse input (movement, buttons, wheel), throttled to one per 10 ms. Works around the engine's damage tracking dropping regions (tech-tree rows never re-colour; the "what to build next" advisor ignores hover and the wheel). Re-read live — edit and save while the game runs (~2 s). |
+| `RepaintOnKey` | `1` | Force a full repaint after keyboard input, same throttle. Fixes typed fields that never appear: the trade screen's amount box updates the engine's value but its region is never marked dirty, so digits stayed invisible until something else forced a paint. Re-read live. |
 | `LogLevel` | `0` | `0` silent, `1` write `civ3bl.log`, `2` verbose. |
 | `LieScreen` / `LieClientRect` / `LieDeviceCaps` | `1` | Advanced: which APIs are lied to about the virtual display size. Leave all on — the engine derives buffer sizes and row strides from them and they must agree. |
 
@@ -151,6 +152,9 @@ Windows version's OpenGL export set.
   most visibly in the tech tree, where techs below the second row don't change
   colour when selected. `RepaintOnClick=1` fixes it by invalidating the window
   after each click (one extra screen redraw per click, nothing at idle).
+- The same damage tracking never marks a text or number box dirty, so a value
+  typed into a dialog (the trade screen's amount field) stayed invisible until
+  the mouse moved again. `RepaintOnKey=1` invalidates after keyboard input.
 - `LogBlits=1` writes and flushes a line per blit and will visibly stutter the
   game. Diagnostics only.
 - `civ3bl.ini` is re-read whenever it changes, so `RepaintOnClick` and `LogLevel`

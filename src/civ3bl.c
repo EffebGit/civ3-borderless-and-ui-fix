@@ -84,6 +84,7 @@ void cfg_load(void)
     g_cfg.verboseBlit    = ini_int(ini, "Civ3Borderless", "LogBlits", 0);
     g_cfg.lockCursor     = ini_int(ini, "Civ3Borderless", "LockCursor", 1);
     g_cfg.repaintOnClick = ini_int(ini, "Civ3Borderless", "RepaintOnClick", 1);
+    g_cfg.repaintOnKey   = ini_int(ini, "Civ3Borderless", "RepaintOnKey", 1);
     g_cfg.forceRedraw    = ini_int(ini, "Civ3Borderless", "ForceRedraw", 0);
     g_cfg.lieScreen      = ini_int(ini, "Civ3Borderless", "LieScreen", 1);
     g_cfg.lieClientRect  = ini_int(ini, "Civ3Borderless", "LieClientRect", 1);
@@ -334,7 +335,7 @@ static PFN_EnumDisplaySettingsA p_EnumDSA;
 static int g_nEnum, g_nWndRect, g_nSpw;
 
 static int g_sizes[32][2], g_nSizes;
-static int g_nPosMsg, g_nSizeMsg, g_nMsg, g_nStretch, g_nDib, g_nStretchDib, g_nGetDC, g_nRestyle, g_nCur, g_nStc, g_nCts;
+static int g_nPosMsg, g_nSizeMsg, g_nMsg, g_nKeyMsg, g_nStretch, g_nDib, g_nStretchDib, g_nGetDC, g_nRestyle, g_nCur, g_nStc, g_nCts;
 
 static int WINAPI H_GetSystemMetrics(int idx)
 {
@@ -673,6 +674,7 @@ static HOOKFN hook_for(const char *dll, const char *name)
 
 // -------------------------------------------------------------- window setup --
 static void nudge_repaint(HWND h, int why);
+static void nudge_repaint_key(HWND h, int why);
 static WNDPROC g_origProc;
 
 /* The engine hit-tests clicks with the client coordinates carried by the
@@ -751,6 +753,14 @@ static LRESULT CALLBACK game_wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
         nudge_repaint(h, msg);
         return r;
     }
+    case WM_KEYDOWN: case WM_KEYUP: case WM_SYSKEYDOWN: case WM_SYSKEYUP: case WM_CHAR: case WM_UNICHAR: {
+        LRESULT r = CallWindowProcA(g_origProc, h, msg, wp, lp);
+        if (g_cfg.verboseBlit && g_nKeyMsg++ < 40)
+            logmsg("wndproc key msg 0x%04x wp=0x%lx lp=0x%lx", msg,
+                   (unsigned long)wp, (unsigned long)lp);
+        nudge_repaint_key(h, msg);
+        return r;
+    }
     case WM_ACTIVATE:
         if (g_cfg.verboseBlit) logmsg("WM_ACTIVATE wp=0x%lx", (unsigned long)wp);
         break;
@@ -804,15 +814,28 @@ static BOOL CALLBACK collect_game_wnd(HWND h, LPARAM lp)
    turn the nudge into a per-pixel redraw storm. */
 static int g_lastNudge;
 
-static void nudge_repaint(HWND h, int why)
+static void nudge_repaint_gate(HWND h, int why, int gate)
 {
     int now;
-    if (!g_cfg.repaintOnClick) return;
+    if (!gate) return;
     now = (int)GetTickCount();
     if (now - g_lastNudge < 10) return;
     g_lastNudge = now;
     InvalidateRect(h, NULL, FALSE);
     if (g_cfg.verboseBlit && g_nRepaint++ < 30) logmsg("repaint nudge (msg 0x%04x)", why);
+}
+
+static void nudge_repaint(HWND h, int why)
+{
+    nudge_repaint_gate(h, why, g_cfg.repaintOnClick);
+}
+
+/* Keyboard input gets its own gate: the engine's damage tracking never
+   invalidates a text/number field, so a typed value stays invisible until
+   something else forces a paint (the trade screen is the clearest case). */
+static void nudge_repaint_key(HWND h, int why)
+{
+    nudge_repaint_gate(h, why, g_cfg.repaintOnClick || g_cfg.repaintOnKey);
 }
 
 static void enforce_geometry(void)
@@ -968,8 +991,8 @@ static void check_ini_reload(void)
     cfg_load();
     g_statCount = 0; g_statSum = 0; g_statMax = 0; g_statIdx = 0;
     if (g_cfg.logLevel > 0)
-        logmsg("ini reloaded: RepaintOnClick=%d LockCursor=%d LogLevel=%d (LogicalWidth/Height need a restart)",
-               g_cfg.repaintOnClick, g_cfg.lockCursor, g_cfg.logLevel);
+        logmsg("ini reloaded: RepaintOnClick=%d RepaintOnKey=%d ForceRedraw=%d LockCursor=%d LogLevel=%d (LogicalWidth/Height need a restart)",
+               g_cfg.repaintOnClick, g_cfg.repaintOnKey, g_cfg.forceRedraw, g_cfg.lockCursor, g_cfg.logLevel);
     if (g_cfg.logLevel == 0 && g_fp) { fclose(g_fp); g_fp = NULL; }   /* release the log */
 }
 

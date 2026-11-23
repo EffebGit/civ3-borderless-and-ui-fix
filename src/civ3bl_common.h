@@ -1,7 +1,7 @@
 // civ3bl_common.h -- shared logging + IAT hook plumbing for the Civ3 borderless layer
 #pragma once
 
-#define CIV3BL_VERSION "1.0.3"
+#define CIV3BL_VERSION "1.0.4"
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <stdio.h>
@@ -22,6 +22,7 @@ typedef struct {
     int  verboseBlit;    // log every present call
     int  forceRedraw;    // >0 = invalidate the client N times per second
     int  repaintOnClick; // full repaint after a click (engine damage tracking drops regions)
+    int  repaintOnKey;   // full repaint after keyboard input (text/number fields never redraw)
     int  lockCursor;     // confine the cursor to the monitor while foreground
     int  lieScreen;      // report LogicalWidth/Height via GetSystemMetrics
     int  lieClientRect;  // report LogicalWidth/Height via GetClientRect
